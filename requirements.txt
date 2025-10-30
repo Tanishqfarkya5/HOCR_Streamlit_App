@@ -1,6 +1,8 @@
 streamlit
-pytesseract
-Pillow
-python-docx
 opencv-python-headless
+easyocr
 numpy
+pillow
+regex
+python-docx
+indic-nlp-library
