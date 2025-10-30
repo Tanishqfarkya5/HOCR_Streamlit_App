@@ -1,9 +1,6 @@
 streamlit
 easyocr
-torch
-torchvision
-opencv-python-headless
-numpy
-Pillow
 python-docx
+Pillow
 reportlab
+numpy
