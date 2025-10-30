@@ -1,7 +1,8 @@
 streamlit
-easyocr
-numpy
+easyocr==1.7.1
+torch==2.1.0
+torchvision==0.16.0
+numpy==1.24.4
 pillow
 reportlab
-torch
-opencv-python-headless
+opencv-python-headless==4.8.1.78
