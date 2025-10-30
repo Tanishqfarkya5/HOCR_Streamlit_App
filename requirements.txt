@@ -1,6 +1,6 @@
 streamlit
 easyocr
-python-docx
-Pillow
-reportlab
+pillow
 numpy
+torch
+torchvision
