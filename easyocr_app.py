@@ -2,88 +2,80 @@ import streamlit as st
 from PIL import Image, ImageEnhance, ImageFilter
 import pytesseract
 from docx import Document
-import io
-import os
-import urllib.request
-import cv2
 import numpy as np
+import io, os, urllib.request, cv2
 
-# =============================
-# ✅ Setup Hindi model (best version)
-# =============================
-LOCAL_TESSDATA_DIR = os.path.join(os.getcwd(), "tessdata_best")
-os.makedirs(LOCAL_TESSDATA_DIR, exist_ok=True)
-HIN_MODEL = os.path.join(LOCAL_TESSDATA_DIR, "hin.traineddata")
-ENG_MODEL = os.path.join(LOCAL_TESSDATA_DIR, "eng.traineddata")
+st.set_page_config(page_title="Hindi OCR App", layout="centered")
+st.title("🪷 Hindi OCR (Tesseract-based)")
+st.markdown("Upload a Hindi text image to extract and download the recognized text as a Word file.")
 
-# Download Hindi & English models if missing
+# --- Model setup ---
+MODEL_DIR = os.path.join(os.getcwd(), "tessdata_best")
+os.makedirs(MODEL_DIR, exist_ok=True)
+HIN_PATH = os.path.join(MODEL_DIR, "hin.traineddata")
+ENG_PATH = os.path.join(MODEL_DIR, "eng.traineddata")
+
 def download_model(lang, path):
     if not os.path.exists(path):
         url = f"https://github.com/tesseract-ocr/tessdata_best/raw/main/{lang}.traineddata"
-        st.info(f"🔽 Downloading {lang} model...")
+        st.info(f"📦 Downloading {lang} model...")
         urllib.request.urlretrieve(url, path)
-        st.success(f"✅ {lang} model downloaded successfully!")
+        st.success(f"✅ {lang} model ready!")
 
-download_model("hin", HIN_MODEL)
-download_model("eng", ENG_MODEL)
+download_model("hin", HIN_PATH)
+download_model("eng", ENG_PATH)
+os.environ["TESSDATA_PREFIX"] = MODEL_DIR
 
-os.environ["TESSDATA_PREFIX"] = LOCAL_TESSDATA_DIR
+# --- File uploader ---
+uploaded_file = st.file_uploader("📤 Upload image (Hindi or mixed text)", type=["png", "jpg", "jpeg"])
 
-# =============================
-# ✅ Streamlit UI
-# =============================
-st.set_page_config(page_title="Improved Hindi OCR", layout="centered")
-st.title("🪷 Improved Hindi OCR App")
-st.markdown("Upload a Hindi or mixed Hindi-English text image for cleaner OCR output.")
-
-uploaded_file = st.file_uploader("📤 Upload Image", type=["png", "jpg", "jpeg"])
-
-if uploaded_file is not None:
+if uploaded_file:
     image = Image.open(uploaded_file)
     st.image(image, caption="📸 Uploaded Image", use_container_width=True)
 
-    if st.button("🔍 Extract Text"):
-        with st.spinner("Processing and extracting text..."):
+    if st.button("🔍 Extract Hindi Text"):
+        with st.spinner("Processing image and extracting Hindi text..."):
             try:
-                # Convert image to OpenCV format
-                img = np.array(image.convert('RGB'))
-                img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+                # Convert to grayscale
+                img = np.array(image.convert("RGB"))
+                gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
-                # ✅ Preprocessing: denoise + threshold + enlarge
-                img = cv2.GaussianBlur(img, (3, 3), 0)
-                img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-                img = cv2.resize(img, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+                # Denoise & enhance
+                gray = cv2.bilateralFilter(gray, 11, 17, 17)
+                gray = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                             cv2.THRESH_BINARY, 31, 2)
 
-                # Save temp image
-                temp_path = "temp.png"
-                cv2.imwrite(temp_path, img)
+                # Sharpen & enlarge
+                gray = cv2.resize(gray, None, fx=1.8, fy=1.8, interpolation=cv2.INTER_CUBIC)
+                gray = cv2.GaussianBlur(gray, (1, 1), 0)
 
-                # ✅ Use both Hindi + English for better handling
-                extracted_text = pytesseract.image_to_string(Image.open(temp_path), lang="hin+eng")
+                # Save temporary processed file
+                cv2.imwrite("temp.png", gray)
 
-                if extracted_text.strip():
-                    st.subheader("🪔 Recognized Hindi Text:")
-                    st.text_area("Recognized text:", extracted_text, height=350)
+                # Perform OCR
+                text = pytesseract.image_to_string(Image.open("temp.png"), lang="hin+eng")
 
-                    # Save to Word
+                if text.strip():
+                    st.subheader("🪔 Recognized Text:")
+                    st.text_area("", text, height=300)
+
+                    # Create Word file
                     doc = Document()
-                    doc.add_paragraph(extracted_text)
-                    buffer = io.BytesIO()
-                    doc.save(buffer)
-                    buffer.seek(0)
+                    doc.add_paragraph(text)
+                    buf = io.BytesIO()
+                    doc.save(buf)
+                    buf.seek(0)
 
                     st.download_button(
                         label="📥 Download Word File",
-                        data=buffer,
-                        file_name="Hindi_Extracted_Text.docx",
+                        data=buf,
+                        file_name="Hindi_OCR_Output.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
                 else:
-                    st.warning("⚠️ No clear text found. Try a sharper image or better lighting.")
-
+                    st.warning("⚠️ No readable Hindi text found in the image.")
             except Exception as e:
                 st.error(f"❌ Error: {e}")
 
-st.markdown("---")
-st.caption("💡 Uses Tesseract tessdata_best for Hindi-English OCR | Streamlit + OpenCV + Python-docx")
-
+st.caption("---")
+st.caption("💡 Tip: Use clear, well-lit images with 300+ DPI for best OCR accuracy.")
