@@ -1,92 +1,62 @@
 import streamlit as st
+import easyocr
 from PIL import Image
-import numpy as np
 import io
-import os
+from docx import Document
+from docx.shared import Pt
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfbase import pdfmetrics
 
-@st.cache_resource
-def load_easyocr_reader(lang_list=["en"]):
-    import easyocr
-    return easyocr.Reader(lang_list, gpu=False)
+# Register Hindi-compatible font for PDF
+pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
 
-st.set_page_config(page_title="EasyOCR Demo", layout="centered")
-st.title("📷 EasyOCR Capstone — Streamlit App")
-st.write("Upload images to extract text and download results.")
+# Streamlit App Configuration
+st.set_page_config(page_title="EasyOCR Hindi App", layout="centered")
+st.title("📄 EasyOCR - Hindi Handwritten Text Extractor")
 
-uploaded = st.file_uploader("Upload an image (jpg/png)", type=["jpg","jpeg","png"])
-langs = st.multiselect("Languages for OCR", ["en", "hi"], default=["en"])
+# Upload image
+uploaded_file = st.file_uploader("Upload a Hindi handwritten image", type=["png", "jpg", "jpeg"])
 
-if uploaded:
-    image = Image.open(io.BytesIO(uploaded.read())).convert("RGB")
-    st.image(image, caption="Uploaded image", use_container_width=True)
-    st.markdown("---")
+if uploaded_file:
+    image = Image.open(uploaded_file)
+    st.image(image, caption="Uploaded Image", use_container_width=True)
 
-    if st.button("Extract text"):
-        with st.spinner("Running OCR..."):
-            reader = load_easyocr_reader(lang_list=langs)
-            img_np = np.array(image)
-            results = reader.readtext(img_np)
+    if st.button("🪄 Extract Text"):
+        with st.spinner("Extracting text... कृपया प्रतीक्षा करें..."):
+            reader = easyocr.Reader(['hi', 'en'], gpu=False)
+            result = reader.readtext(np.array(image), detail=0)
 
-        if not results:
-            st.info("No text detected.")
-        else:
-            detected_text = [text for (_, text, _) in results]
-            final_text = "\n".join(detected_text)
+        extracted_text = "\n".join(result).strip()
 
-            st.subheader("📝 Detected text")
-            st.text_area("Extracted Text", final_text, height=250)
+        # Display extracted text
+        st.subheader("📝 Extracted Text:")
+        st.text_area("Extracted Text", extracted_text, height=300)
 
-            # === DOWNLOAD AS TEXT FILE ===
-            st.download_button(
-                label="📄 Download as TXT",
-                data=final_text,
-                file_name="extracted_text.txt",
-                mime="text/plain"
-            )
+        # ---- Save as DOCX ----
+        doc = Document()
+        para = doc.add_paragraph(extracted_text)
+        para.style.font.name = 'Mangal'
+        para.style.font.size = Pt(14)
+        docx_stream = io.BytesIO()
+        doc.save(docx_stream)
+        docx_stream.seek(0)
 
-            # === DOWNLOAD AS DOCX FILE ===
-            from docx import Document
-            doc = Document()
-            doc.add_paragraph(final_text)
-            buffer = io.BytesIO()
-            doc.save(buffer)
-            buffer.seek(0)
-            st.download_button(
-                label="🧾 Download as DOCX",
-                data=buffer,
-                file_name="extracted_text.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
+        # ---- Save as PDF ----
+        pdf_stream = io.BytesIO()
+        c = canvas.Canvas(pdf_stream, pagesize=A4)
+        text_obj = c.beginText(50, 800)
+        text_obj.setFont("STSong-Light", 14)
+        for line in extracted_text.split("\n"):
+            text_obj.textLine(line)
+        c.drawText(text_obj)
+        c.showPage()
+        c.save()
+        pdf_stream.seek(0)
 
-            # === DOWNLOAD AS PDF FILE ===
-            from reportlab.lib.pagesizes import A4
-            from reportlab.pdfgen import canvas
-            pdf_buffer = io.BytesIO()
-            c = canvas.Canvas(pdf_buffer, pagesize=A4)
-            width, height = A4
-            y = height - 50
-            for line in final_text.split("\n"):
-                c.drawString(50, y, line)
-                y -= 15
-                if y < 50:
-                    c.showPage()
-                    y = height - 50
-            c.save()
-            pdf_buffer.seek(0)
-            st.download_button(
-                label="📘 Download as PDF",
-                data=pdf_buffer,
-                file_name="extracted_text.pdf",
-                mime="application/pdf"
-            )
+        # ---- Download buttons ----
+        st.download_button("⬇️ Download DOCX", docx_stream, "output_text.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        st.download_button("⬇️ Download PDF", pdf_stream, "output_text.pdf", "application/pdf")
 
-            # === Optional bounding boxes ===
-            try:
-                import cv2
-                img_bboxes = img_np.copy()
-                for (bbox, text, prob) in results:
-                    pts = np.array(bbox).astype(int)
-                    cv2.polylines(img_bboxes, [pts], isClosed=True, thickness=2, color=(0,255,0))
-                st.image(img_bboxes, caption="With bounding boxes", use_container_width=True)
-            except Exception as e:
-                st.error(f"Error drawing boxes: {e}")
+        st.success("✅ Text extracted and files ready to download!")
