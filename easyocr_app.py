@@ -19,27 +19,45 @@ st.title("🪶 Hindi OCR App using EasyOCR")
 
 @st.cache_resource
 def load_reader():
-    return easyocr.Reader(['hi'], gpu=False)  # Hindi only
+    return easyocr.Reader(['hi'], gpu=False)
 
 reader = load_reader()
 
 # ----------------------------------------------------------
-# 🪶 AUTO-DOWNLOAD HINDI FONT (if missing)
+# 🪶 FONT SETUP (auto-download from multiple mirrors)
 # ----------------------------------------------------------
 FONT_PATH = "NotoSansDevanagari-Regular.ttf"
-FONT_URL = "https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari-Regular.ttf"
+
+FONT_URLS = [
+    # Official Google Fonts raw link
+    "https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari-Regular.ttf",
+    # Alternative CDN mirror
+    "https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSansDevanagari/NotoSansDevanagari-Regular.ttf",
+    # Backup Google Drive mirror (for safety)
+    "https://drive.google.com/uc?id=1Yniw4aVtK7bUak9XkZahgR7oWjF4gZnK"
+]
+
+def download_font():
+    for url in FONT_URLS:
+        try:
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200 and len(r.content) > 100000:  # sanity check: ~150 KB+
+                with open(FONT_PATH, "wb") as f:
+                    f.write(r.content)
+                return True
+        except Exception:
+            continue
+    return False
 
 if not os.path.exists(FONT_PATH):
     with st.spinner("Downloading Hindi font..."):
-        r = requests.get(FONT_URL)
-        if r.status_code == 200:
-            with open(FONT_PATH, "wb") as f:
-                f.write(r.content)
+        success = download_font()
+        if success:
             st.success("✅ Hindi font downloaded successfully!")
         else:
             st.warning("⚠️ Could not download Hindi font. PDF may not render properly.")
 
-# Register font for ReportLab
+# Register the Hindi font for PDF rendering
 if os.path.exists(FONT_PATH):
     pdfmetrics.registerFont(TTFont("NotoHindi", FONT_PATH))
 else:
