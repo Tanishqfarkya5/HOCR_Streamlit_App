@@ -1,8 +1,7 @@
 streamlit
-paddleocr==2.7.0.3
-paddlepaddle==2.5.2
-opencv-python-headless==4.10.0.84
+easyocr
+numpy
 pillow
 reportlab
-python-docx
-requests
+torch
+opencv-python-headless
