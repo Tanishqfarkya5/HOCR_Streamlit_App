@@ -1,69 +1,109 @@
 import streamlit as st
 import easyocr
 import pytesseract
-import cv2
-import numpy as np
 from PIL import Image
+import numpy as np
 from io import BytesIO
-from docx import Document
-from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-import re
+from reportlab.lib.pagesizes import A4
 
-st.set_page_config(page_title="Hindi OCR Extractor", page_icon="🪄")
 
-st.title("🪄 Advanced OCR for Hindi Text")
-st.write("Upload handwritten or printed Hindi text image. You can choose EasyOCR or Tesseract engine.")
+# ------------------------------------------------------------
+# ⚙️ APP CONFIG
+# ------------------------------------------------------------
+st.set_page_config(page_title="Hindi OCR App", layout="centered")
+st.title("🪷 Hindi Handwritten OCR (Tesseract + EasyOCR Fallback)")
+st.markdown("Upload an image with **Hindi or English handwritten text**, and extract it accurately.")
 
-uploaded_file = st.file_uploader("📤 Upload Image", type=["jpg", "jpeg", "png"])
 
-def clean_text(text):
-    text = re.sub(r'[|¦]+', '।', text)
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
+# ------------------------------------------------------------
+# 🧠 CACHED OCR LOADERS
+# ------------------------------------------------------------
+@st.cache_resource
+def load_easyocr():
+    return easyocr.Reader(['hi', 'en'], gpu=False)
 
-if uploaded_file:
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Image", use_column_width=True)
+@st.cache_resource
+def load_tesseract():
+    return pytesseract
 
-    use_tesseract = st.checkbox("Use Tesseract (Better for Hindi)", value=True)
+
+# ------------------------------------------------------------
+# 🧩 FUNCTIONS
+# ------------------------------------------------------------
+def extract_with_tesseract(image):
+    try:
+        text = pytesseract.image_to_string(image, lang='hin+eng')
+        return text.strip()
+    except Exception as e:
+        return f"Tesseract error: {str(e)}"
+
+
+def extract_with_easyocr(image):
+    try:
+        reader = load_easyocr()
+        np_image = np.array(image)
+        result = reader.readtext(np_image, detail=0)
+        return "\n".join(result)
+    except Exception as e:
+        return f"EasyOCR error: {str(e)}"
+
+
+def create_text_download(text):
+    """Return a downloadable .txt file"""
+    buffer = BytesIO()
+    buffer.write(text.encode('utf-8'))
+    buffer.seek(0)
+    return buffer
+
+
+def create_pdf_download(text):
+    """Return a downloadable .pdf file"""
+    buffer = BytesIO()
+    p = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    y = height - 60
+    for line in text.split('\n'):
+        p.drawString(60, y, line)
+        y -= 18
+        if y < 60:
+            p.showPage()
+            y = height - 60
+    p.save()
+    buffer.seek(0)
+    return buffer
+
+
+# ------------------------------------------------------------
+# 🖼️ IMAGE UPLOAD
+# ------------------------------------------------------------
+uploaded_image = st.file_uploader("Upload handwritten Hindi/English image", type=["jpg", "jpeg", "png"])
+
+if uploaded_image:
+    image = Image.open(uploaded_image).convert("RGB")
+    image.thumbnail((1200, 1200))
+    st.image(image, caption="Uploaded Image", use_container_width=True)
 
     if st.button("🔍 Extract Text"):
-        with st.spinner("Extracting text..."):
-            if use_tesseract:
-                img_cv = np.array(image.convert('RGB'))
-                gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
-                text = pytesseract.image_to_string(gray, lang='hin', config="--psm 6")
-            else:
-                reader = easyocr.Reader(['hi', 'en'], verbose=False)
-                gray = cv2.cvtColor(np.array(image.convert('RGB')), cv2.COLOR_RGB2GRAY)
-                text = "\n".join(reader.readtext(gray, detail=0, paragraph=True))
+        with st.spinner("Extracting text... please wait"):
+            text_tesseract = extract_with_tesseract(image)
 
-        text = clean_text(text)
+            # if too short or empty, use EasyOCR fallback
+            if len(text_tesseract.strip()) < 10:
+                st.warning("Tesseract output too short, switching to EasyOCR fallback...")
+                text = extract_with_easyocr(image)
+            else:
+                text = text_tesseract
+
         st.success("✅ Text extracted successfully!")
-        st.text_area("Extracted Text", text, height=200)
+        st.text_area("🧾 Extracted Text:", text, height=300)
 
         # Download buttons
-        def create_docx(text):
-            buf = BytesIO()
-            doc = Document()
-            doc.add_paragraph(text)
-            doc.save(buf)
-            buf.seek(0)
-            return buf
+        txt_buffer = create_text_download(text)
+        pdf_buffer = create_pdf_download(text)
 
-        def create_pdf(text):
-            buf = BytesIO()
-            c = canvas.Canvas(buf, pagesize=A4)
-            t = c.beginText(40, 800)
-            t.setFont("Helvetica", 12)
-            for line in text.split("\n"):
-                t.textLine(line)
-            c.drawText(t)
-            c.save()
-            buf.seek(0)
-            return buf
+        st.download_button("⬇️ Download as TXT", data=txt_buffer,
+                           file_name="extracted_text.txt", mime="text/plain")
 
-        col1, col2 = st.columns(2)
-        col1.download_button("📘 Download Word", create_docx(text), "hindi_text.docx")
-        col2.download_button("📄 Download PDF", create_pdf(text), "hindi_text.pdf")
+        st.download_button("⬇️ Download as PDF", data=pdf_buffer,
+                           file_name="extracted_text.pdf", mime="application/pdf")
