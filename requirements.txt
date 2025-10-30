@@ -1,4 +1,6 @@
 streamlit
 pytesseract
-pillow
+Pillow
 python-docx
+opencv-python-headless
+numpy
