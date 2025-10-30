@@ -4,23 +4,33 @@ import numpy as np
 from PIL import Image
 from io import BytesIO
 from docx import Document
-from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import os
 
 st.set_page_config(page_title="Hindi OCR App", layout="centered")
 st.title("🪶 Hindi OCR App using EasyOCR")
 
 @st.cache_resource
 def load_reader():
-    return easyocr.Reader(['hi'], gpu=False)  # only Hindi
+    return easyocr.Reader(['hi'], gpu=False)
 
 reader = load_reader()
 
-uploaded_file = st.file_uploader("Upload an image", type=["jpg","jpeg","png"])
+# Register Hindi font (you can include this file in the same folder)
+FONT_PATH = "NotoSansDevanagari-Regular.ttf"
+if not os.path.exists(FONT_PATH):
+    st.warning("⚠️ Please add 'NotoSansDevanagari-Regular.ttf' in your app folder for Hindi text support in PDF.")
+else:
+    pdfmetrics.registerFont(TTFont("NotoHindi", FONT_PATH))
+
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
-    image.thumbnail((800,800))
+    image.thumbnail((800, 800))
     st.image(image, caption="Uploaded Image", use_column_width=True)
 
     if st.button("Extract Text"):
@@ -44,17 +54,28 @@ if uploaded_file:
         docx_buf.seek(0)
         st.download_button("Download DOCX", data=docx_buf, file_name="output.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
-        # PDF
+        # PDF with Hindi font
         pdf_buf = BytesIO()
         c = canvas.Canvas(pdf_buf, pagesize=A4)
         width, height = A4
-        y = height - 50
+        y = height - 70
+
+        if os.path.exists(FONT_PATH):
+            c.setFont("NotoHindi", 14)
+        else:
+            c.setFont("Helvetica", 14)
+
         for line in extracted_text.split("\n"):
             if y < 50:
                 c.showPage()
-                y = height - 50
+                if os.path.exists(FONT_PATH):
+                    c.setFont("NotoHindi", 14)
+                else:
+                    c.setFont("Helvetica", 14)
+                y = height - 70
             c.drawString(50, y, line)
-            y -= 20
+            y -= 25
+
         c.save()
         pdf_buf.seek(0)
         st.download_button("Download PDF", data=pdf_buf, file_name="output.pdf", mime="application/pdf")
