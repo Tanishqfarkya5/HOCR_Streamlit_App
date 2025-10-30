@@ -1,10 +1,7 @@
-streamlit
-pillow
-numpy
-easyocr
-torch
-torchvision
-opencv-python-headless
-python-docx
-reportlab
-
+streamlit==1.37.1
+easyocr==1.7.1
+opencv-python-headless==4.8.1.78
+Pillow==10.0.1
+numpy==1.26.4
+torch==2.3.1
+torchvision==0.18.1
