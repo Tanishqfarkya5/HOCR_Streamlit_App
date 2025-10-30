@@ -1,64 +1,94 @@
 import streamlit as st
 import easyocr
-from PIL import Image
 import numpy as np
-import io
-from docx import Document
+from PIL import Image
+from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-from reportlab.pdfbase import pdfmetrics
+from docx import Document
 
-# Set Streamlit page config
 st.set_page_config(page_title="Hindi OCR App", layout="centered")
 
-# App title
-st.title("📖 Hindi OCR Text Extractor")
-st.write("Upload an image containing Hindi text and extract it as editable text.")
+st.title("🪶 Hindi OCR App using EasyOCR")
 
-# Upload image
-uploaded_image = st.file_uploader("📤 Upload an Image", type=["png", "jpg", "jpeg"])
+# Initialize EasyOCR Reader
+@st.cache_resource
+def load_reader():
+    return easyocr.Reader(['hi', 'en'])  # Hindi + English
 
-if uploaded_image:
-    image = Image.open(uploaded_image)
+reader = load_reader()
+
+uploaded_file = st.file_uploader("📤 Upload an image", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    image = Image.open(uploaded_file)
     st.image(image, caption="Uploaded Image", use_container_width=True)
 
-    if st.button("🔍 Extract Text"):
-        with st.spinner("Extracting text... Please wait..."):
-            reader = easyocr.Reader(['hi', 'en'])
-            result = reader.readtext(np.array(image), detail=0, paragraph=True)
+    with st.spinner("🔍 Extracting text... Please wait ⏳"):
+        image_np = np.array(image)
+        result = reader.readtext(image_np, detail=0)
 
-            extracted_text = "\n".join(result)
-            st.success("✅ Text extracted successfully!")
+    extracted_text = "\n".join(result)
 
-            st.text_area("📝 Extracted Text:", extracted_text, height=250)
+    st.subheader("📜 Extracted Text")
+    st.text_area("Detected Hindi Text", extracted_text, height=250)
 
-            # --- Download buttons ---
-            # TXT
-            txt_bytes = extracted_text.encode("utf-8")
-            st.download_button("📄 Download TXT", data=txt_bytes, file_name="extracted_text.txt")
+    # Convert to bytes for downloads
+    txt_bytes = extracted_text.encode("utf-8")
 
-            # DOCX
-            doc = Document()
-            doc.add_paragraph(extracted_text)
-            docx_io = io.BytesIO()
-            doc.save(docx_io)
-            docx_io.seek(0)
-            st.download_button("🗒️ Download DOCX", data=docx_io, file_name="extracted_text.docx")
+    # --- PDF Download ---
+    def create_pdf(text):
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
+        p.setFont("Helvetica", 12)
+        width, height = A4
+        y = height - 50
+        for line in text.split("\n"):
+            if y <= 50:
+                p.showPage()
+                p.setFont("Helvetica", 12)
+                y = height - 50
+            p.drawString(50, y, line)
+            y -= 20
+        p.save()
+        buffer.seek(0)
+        return buffer
 
-            # PDF
-            pdf_io = io.BytesIO()
-            pdfmetrics.registerFont(UnicodeCIDFont("HeiseiMin-W3"))
-            c = canvas.Canvas(pdf_io, pagesize=A4)
-            c.setFont("HeiseiMin-W3", 14)
-            y = 800
-            for line in extracted_text.split("\n"):
-                c.drawString(50, y, line)
-                y -= 20
-                if y < 50:
-                    c.showPage()
-                    c.setFont("HeiseiMin-W3", 14)
-                    y = 800
-            c.save()
-            pdf_io.seek(0)
-            st.download_button("📘 Download PDF", data=pdf_io, file_name="extracted_text.pdf")
+    pdf_buffer = create_pdf(extracted_text)
+
+    # --- Word (DOCX) Download ---
+    def create_docx(text):
+        doc = Document()
+        doc.add_heading("Hindi OCR Extracted Text", level=1)
+        doc.add_paragraph(text)
+        buffer = BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        return buffer
+
+    docx_buffer = create_docx(extracted_text)
+
+    # Download Buttons
+    st.download_button(
+        "📥 Download as TXT",
+        data=txt_bytes,
+        file_name="hindi_text.txt",
+        mime="text/plain"
+    )
+
+    st.download_button(
+        "📄 Download as PDF",
+        data=pdf_buffer,
+        file_name="hindi_text.pdf",
+        mime="application/pdf"
+    )
+
+    st.download_button(
+        "📝 Download as Word (DOCX)",
+        data=docx_buffer,
+        file_name="hindi_text.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+else:
+    st.info("👆 Please upload an image to start OCR.")
