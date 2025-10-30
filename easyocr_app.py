@@ -7,19 +7,26 @@ import os
 import urllib.request
 
 # =============================
-# ✅ Step 1: Ensure Hindi OCR model exists
+# ✅ Step 1: Use local folder for tessdata
 # =============================
-TESSDATA_DIR = "/usr/share/tesseract-ocr/4.00/tessdata/"
-os.makedirs(TESSDATA_DIR, exist_ok=True)
-HIN_MODEL = os.path.join(TESSDATA_DIR, "hin.traineddata")
+LOCAL_TESSDATA_DIR = os.path.join(os.getcwd(), "tessdata")
+os.makedirs(LOCAL_TESSDATA_DIR, exist_ok=True)
+
+HIN_MODEL = os.path.join(LOCAL_TESSDATA_DIR, "hin.traineddata")
 
 if not os.path.exists(HIN_MODEL):
     st.info("🔽 Downloading Hindi OCR model (hin.traineddata)...")
-    urllib.request.urlretrieve(
-        "https://github.com/tesseract-ocr/tessdata_best/raw/main/hin.traineddata",
-        HIN_MODEL
-    )
-    st.success("✅ Hindi OCR model downloaded successfully!")
+    try:
+        urllib.request.urlretrieve(
+            "https://github.com/tesseract-ocr/tessdata_best/raw/main/hin.traineddata",
+            HIN_MODEL
+        )
+        st.success("✅ Hindi OCR model downloaded successfully!")
+    except Exception as e:
+        st.error(f"❌ Error downloading Hindi model: {e}")
+
+# Tell pytesseract where our local model is
+os.environ["TESSDATA_PREFIX"] = LOCAL_TESSDATA_DIR
 
 # =============================
 # ✅ Step 2: Streamlit UI setup
