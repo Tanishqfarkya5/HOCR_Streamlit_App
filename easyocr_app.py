@@ -9,23 +9,45 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 import os
+import requests
 
+# ----------------------------------------------------------
+# 🪶 APP SETUP
+# ----------------------------------------------------------
 st.set_page_config(page_title="Hindi OCR App", layout="centered")
 st.title("🪶 Hindi OCR App using EasyOCR")
 
 @st.cache_resource
 def load_reader():
-    return easyocr.Reader(['hi'], gpu=False)
+    return easyocr.Reader(['hi'], gpu=False)  # Hindi only
 
 reader = load_reader()
 
-# Register Hindi font (you can include this file in the same folder)
+# ----------------------------------------------------------
+# 🪶 AUTO-DOWNLOAD HINDI FONT (if missing)
+# ----------------------------------------------------------
 FONT_PATH = "NotoSansDevanagari-Regular.ttf"
-if not os.path.exists(FONT_PATH):
-    st.warning("⚠️ Please add 'NotoSansDevanagari-Regular.ttf' in your app folder for Hindi text support in PDF.")
-else:
-    pdfmetrics.registerFont(TTFont("NotoHindi", FONT_PATH))
+FONT_URL = "https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari-Regular.ttf"
 
+if not os.path.exists(FONT_PATH):
+    with st.spinner("Downloading Hindi font..."):
+        r = requests.get(FONT_URL)
+        if r.status_code == 200:
+            with open(FONT_PATH, "wb") as f:
+                f.write(r.content)
+            st.success("✅ Hindi font downloaded successfully!")
+        else:
+            st.warning("⚠️ Could not download Hindi font. PDF may not render properly.")
+
+# Register font for ReportLab
+if os.path.exists(FONT_PATH):
+    pdfmetrics.registerFont(TTFont("NotoHindi", FONT_PATH))
+else:
+    st.warning("⚠️ Hindi font not found. Using default font (may show boxes in PDF).")
+
+# ----------------------------------------------------------
+# 🪶 FILE UPLOAD SECTION
+# ----------------------------------------------------------
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
@@ -33,28 +55,40 @@ if uploaded_file:
     image.thumbnail((800, 800))
     st.image(image, caption="Uploaded Image", use_column_width=True)
 
+    # ------------------------------------------------------
+    # 🪶 TEXT EXTRACTION
+    # ------------------------------------------------------
     if st.button("Extract Text"):
         with st.spinner("Extracting text..."):
             image_np = np.array(image)
             result = reader.readtext(image_np, detail=0, paragraph=True)
 
         extracted_text = "\n".join(result)
-        st.subheader("Extracted Text")
+        st.subheader("📝 Extracted Text")
         st.text_area("", extracted_text, height=200)
 
-        # TXT
+        # ------------------------------------------------------
+        # 🪶 DOWNLOAD AS TXT
+        # ------------------------------------------------------
         txt_bytes = extracted_text.encode("utf-8")
-        st.download_button("Download TXT", data=txt_bytes, file_name="output.txt", mime="text/plain")
+        st.download_button("📄 Download TXT", data=txt_bytes,
+                           file_name="output.txt", mime="text/plain")
 
-        # DOCX
+        # ------------------------------------------------------
+        # 🪶 DOWNLOAD AS DOCX
+        # ------------------------------------------------------
         doc = Document()
         doc.add_paragraph(extracted_text)
         docx_buf = BytesIO()
         doc.save(docx_buf)
         docx_buf.seek(0)
-        st.download_button("Download DOCX", data=docx_buf, file_name="output.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        st.download_button("📘 Download DOCX", data=docx_buf,
+                           file_name="output.docx",
+                           mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
-        # PDF with Hindi font
+        # ------------------------------------------------------
+        # 🪶 DOWNLOAD AS PDF (with Hindi font)
+        # ------------------------------------------------------
         pdf_buf = BytesIO()
         c = canvas.Canvas(pdf_buf, pagesize=A4)
         width, height = A4
@@ -78,7 +112,8 @@ if uploaded_file:
 
         c.save()
         pdf_buf.seek(0)
-        st.download_button("Download PDF", data=pdf_buf, file_name="output.pdf", mime="application/pdf")
+        st.download_button("🧾 Download PDF", data=pdf_buf,
+                           file_name="output.pdf", mime="application/pdf")
 
 else:
-    st.info("Upload an image to start")
+    st.info("📤 Upload an image to start Hindi OCR.")
