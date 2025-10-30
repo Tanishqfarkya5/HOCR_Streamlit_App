@@ -1,109 +1,64 @@
 import streamlit as st
 import easyocr
-import pytesseract
 from PIL import Image
 import numpy as np
-from io import BytesIO
-from reportlab.pdfgen import canvas
+import io
+from docx import Document
 from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfbase import pdfmetrics
 
-
-# ------------------------------------------------------------
-# ⚙️ APP CONFIG
-# ------------------------------------------------------------
+# Set Streamlit page config
 st.set_page_config(page_title="Hindi OCR App", layout="centered")
-st.title("🪷 Hindi Handwritten OCR (Tesseract + EasyOCR Fallback)")
-st.markdown("Upload an image with **Hindi or English handwritten text**, and extract it accurately.")
 
+# App title
+st.title("📖 Hindi OCR Text Extractor")
+st.write("Upload an image containing Hindi text and extract it as editable text.")
 
-# ------------------------------------------------------------
-# 🧠 CACHED OCR LOADERS
-# ------------------------------------------------------------
-@st.cache_resource
-def load_easyocr():
-    return easyocr.Reader(['hi', 'en'], gpu=False)
-
-@st.cache_resource
-def load_tesseract():
-    return pytesseract
-
-
-# ------------------------------------------------------------
-# 🧩 FUNCTIONS
-# ------------------------------------------------------------
-def extract_with_tesseract(image):
-    try:
-        text = pytesseract.image_to_string(image, lang='hin+eng')
-        return text.strip()
-    except Exception as e:
-        return f"Tesseract error: {str(e)}"
-
-
-def extract_with_easyocr(image):
-    try:
-        reader = load_easyocr()
-        np_image = np.array(image)
-        result = reader.readtext(np_image, detail=0)
-        return "\n".join(result)
-    except Exception as e:
-        return f"EasyOCR error: {str(e)}"
-
-
-def create_text_download(text):
-    """Return a downloadable .txt file"""
-    buffer = BytesIO()
-    buffer.write(text.encode('utf-8'))
-    buffer.seek(0)
-    return buffer
-
-
-def create_pdf_download(text):
-    """Return a downloadable .pdf file"""
-    buffer = BytesIO()
-    p = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
-    y = height - 60
-    for line in text.split('\n'):
-        p.drawString(60, y, line)
-        y -= 18
-        if y < 60:
-            p.showPage()
-            y = height - 60
-    p.save()
-    buffer.seek(0)
-    return buffer
-
-
-# ------------------------------------------------------------
-# 🖼️ IMAGE UPLOAD
-# ------------------------------------------------------------
-uploaded_image = st.file_uploader("Upload handwritten Hindi/English image", type=["jpg", "jpeg", "png"])
+# Upload image
+uploaded_image = st.file_uploader("📤 Upload an Image", type=["png", "jpg", "jpeg"])
 
 if uploaded_image:
-    image = Image.open(uploaded_image).convert("RGB")
-    image.thumbnail((1200, 1200))
+    image = Image.open(uploaded_image)
     st.image(image, caption="Uploaded Image", use_container_width=True)
 
     if st.button("🔍 Extract Text"):
-        with st.spinner("Extracting text... please wait"):
-            text_tesseract = extract_with_tesseract(image)
+        with st.spinner("Extracting text... Please wait..."):
+            reader = easyocr.Reader(['hi', 'en'])
+            result = reader.readtext(np.array(image), detail=0, paragraph=True)
 
-            # if too short or empty, use EasyOCR fallback
-            if len(text_tesseract.strip()) < 10:
-                st.warning("Tesseract output too short, switching to EasyOCR fallback...")
-                text = extract_with_easyocr(image)
-            else:
-                text = text_tesseract
+            extracted_text = "\n".join(result)
+            st.success("✅ Text extracted successfully!")
 
-        st.success("✅ Text extracted successfully!")
-        st.text_area("🧾 Extracted Text:", text, height=300)
+            st.text_area("📝 Extracted Text:", extracted_text, height=250)
 
-        # Download buttons
-        txt_buffer = create_text_download(text)
-        pdf_buffer = create_pdf_download(text)
+            # --- Download buttons ---
+            # TXT
+            txt_bytes = extracted_text.encode("utf-8")
+            st.download_button("📄 Download TXT", data=txt_bytes, file_name="extracted_text.txt")
 
-        st.download_button("⬇️ Download as TXT", data=txt_buffer,
-                           file_name="extracted_text.txt", mime="text/plain")
+            # DOCX
+            doc = Document()
+            doc.add_paragraph(extracted_text)
+            docx_io = io.BytesIO()
+            doc.save(docx_io)
+            docx_io.seek(0)
+            st.download_button("🗒️ Download DOCX", data=docx_io, file_name="extracted_text.docx")
 
-        st.download_button("⬇️ Download as PDF", data=pdf_buffer,
-                           file_name="extracted_text.pdf", mime="application/pdf")
+            # PDF
+            pdf_io = io.BytesIO()
+            pdfmetrics.registerFont(UnicodeCIDFont("HeiseiMin-W3"))
+            c = canvas.Canvas(pdf_io, pagesize=A4)
+            c.setFont("HeiseiMin-W3", 14)
+            y = 800
+            for line in extracted_text.split("\n"):
+                c.drawString(50, y, line)
+                y -= 20
+                if y < 50:
+                    c.showPage()
+                    c.setFont("HeiseiMin-W3", 14)
+                    y = 800
+            c.save()
+            pdf_io.seek(0)
+            st.download_button("📘 Download PDF", data=pdf_io, file_name="extracted_text.pdf")
