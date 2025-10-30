@@ -1,32 +1,30 @@
 import streamlit as st
-from PIL import Image
 import pytesseract
-from docx import Document
+from PIL import Image
 import io
+from docx import Document
 import tempfile
-import numpy as np
 
-st.set_page_config(page_title="Hindi OCR (Word Export)", layout="centered")
-st.title("🪷 Hindi OCR (Word Export)")
-st.caption("Upload an image containing Hindi or English text and download it as a Word file.")
+st.set_page_config(page_title="Hindi OCR App", layout="centered")
 
-# File upload
-uploaded_file = st.file_uploader("📤 Upload image", type=["jpg", "jpeg", "png"])
+st.title("🪷 Hindi OCR App")
+st.caption("Upload an image with Hindi or English text — extract and download as Word file.")
+
+uploaded_file = st.file_uploader("📤 Upload an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
     image = Image.open(uploaded_file)
     st.image(image, caption="Uploaded Image", use_container_width=True)
 
-    st.info("🔍 Extracting text, please wait...")
+    st.info("🔍 Extracting text using Tesseract (please wait...)")
 
-    # OCR using pytesseract
+    # Perform OCR using pytesseract
     extracted_text = pytesseract.image_to_string(image, lang="hin+eng")
 
-    # Display extracted text
     st.subheader("📝 Extracted Text:")
-    st.text_area("", extracted_text, height=250)
+    st.text_area("Recognized text:", extracted_text, height=250)
 
-    # Generate Word File
+    # Generate Word file
     def generate_docx(text):
         doc = Document()
         for line in text.split("\n"):
@@ -42,3 +40,6 @@ if uploaded_file:
         file_name="extracted_text.docx",
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
+st.markdown("---")
+st.caption("✨ Built with Streamlit + Pytesseract")
