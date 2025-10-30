@@ -8,3 +8,4 @@ reportlab==4.2.2
 torch==2.4.1
 torchvision==0.19.1
 pytesseract==0.3.10
+tesseract==0.1.3
