@@ -5,3 +5,4 @@ Pillow
 python-docx
 reportlab
 opencv-python-headless
+requests
