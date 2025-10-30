@@ -1,8 +1,7 @@
 streamlit
-easyocr
-numpy
-Pillow
-python-docx
+paddleocr
+paddlepaddle
+pillow
 reportlab
-opencv-python-headless
+python-docx
 requests
