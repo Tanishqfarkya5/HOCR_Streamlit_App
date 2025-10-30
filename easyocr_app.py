@@ -1,137 +1,124 @@
 import streamlit as st
-import easyocr
+from paddleocr import PaddleOCR
 import numpy as np
 from PIL import Image
 from io import BytesIO
-from docx import Document
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-import os
+from docx import Document
 import requests
+import os
 
-# ----------------------------------------------------------
-# 🪶 APP SETUP
-# ----------------------------------------------------------
-st.set_page_config(page_title="Hindi OCR App", layout="centered")
-st.title("🪶 Hindi OCR App using EasyOCR")
+# ======================
+# APP CONFIG
+# ======================
+st.set_page_config(page_title="Hindi OCR App using PaddleOCR", layout="centered")
+st.title("🪶 Hindi OCR App using PaddleOCR")
 
-@st.cache_resource
-def load_reader():
-    return easyocr.Reader(['hi'], gpu=False)
-
-reader = load_reader()
-
-# ----------------------------------------------------------
-# 🪶 FONT SETUP (auto-download from multiple mirrors)
-# ----------------------------------------------------------
+# ======================
+# DOWNLOAD HINDI FONT
+# ======================
 FONT_PATH = "NotoSansDevanagari-Regular.ttf"
-
-FONT_URLS = [
-    # Official Google Fonts raw link
-    "https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari-Regular.ttf",
-    # Alternative CDN mirror
-    "https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSansDevanagari/NotoSansDevanagari-Regular.ttf",
-    # Backup Google Drive mirror (for safety)
-    "https://drive.google.com/uc?id=1Yniw4aVtK7bUak9XkZahgR7oWjF4gZnK"
-]
-
-def download_font():
-    for url in FONT_URLS:
-        try:
-            r = requests.get(url, timeout=10)
-            if r.status_code == 200 and len(r.content) > 100000:  # sanity check: ~150 KB+
-                with open(FONT_PATH, "wb") as f:
-                    f.write(r.content)
-                return True
-        except Exception:
-            continue
-    return False
+FONT_URL = "https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari-Regular.ttf"
 
 if not os.path.exists(FONT_PATH):
     with st.spinner("Downloading Hindi font..."):
-        success = download_font()
-        if success:
-            st.success("✅ Hindi font downloaded successfully!")
-        else:
-            st.warning("⚠️ Could not download Hindi font. PDF may not render properly.")
+        try:
+            r = requests.get(FONT_URL)
+            if r.status_code == 200:
+                with open(FONT_PATH, "wb") as f:
+                    f.write(r.content)
+                st.success("✅ Hindi font downloaded successfully!")
+            else:
+                st.warning("⚠️ Could not download Hindi font. PDF may not render properly.")
+        except Exception as e:
+            st.warning(f"⚠️ Font download failed: {e}")
 
-# Register the Hindi font for PDF rendering
+# Register Hindi font for PDF
 if os.path.exists(FONT_PATH):
     pdfmetrics.registerFont(TTFont("NotoHindi", FONT_PATH))
 else:
     st.warning("⚠️ Hindi font not found. Using default font (may show boxes in PDF).")
 
-# ----------------------------------------------------------
-# 🪶 FILE UPLOAD SECTION
-# ----------------------------------------------------------
-uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+# ======================
+# LOAD OCR MODEL
+# ======================
+@st.cache_resource
+def load_ocr():
+    return PaddleOCR(lang='hi', use_angle_cls=True)
+
+ocr = load_ocr()
+
+# ======================
+# UPLOAD SECTION
+# ======================
+st.subheader("📤 Upload an image (JPG, PNG, JPEG)")
+uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
-    image = Image.open(uploaded_file).convert("RGB")
-    image.thumbnail((800, 800))
-    st.image(image, caption="Uploaded Image", use_column_width=True)
+    image = Image.open(uploaded_file)
+    st.image(image, caption="Uploaded Image", use_container_width=True)
 
-    # ------------------------------------------------------
-    # 🪶 TEXT EXTRACTION
-    # ------------------------------------------------------
-    if st.button("Extract Text"):
-        with st.spinner("Extracting text..."):
-            image_np = np.array(image)
-            result = reader.readtext(image_np, detail=0, paragraph=True)
+    if st.button("🔍 Extract Hindi Text"):
+        with st.spinner("Extracting text using PaddleOCR..."):
+            result = ocr.ocr(np.array(image), cls=True)
+            extracted_text = ""
+            for line in result[0]:
+                extracted_text += line[1][0] + " "
 
-        extracted_text = "\n".join(result)
-        st.subheader("📝 Extracted Text")
-        st.text_area("", extracted_text, height=200)
+        # ======================
+        # DISPLAY RESULTS
+        # ======================
+        st.success("✅ Text extraction completed!")
+        st.text_area("📜 Extracted Hindi Text", extracted_text, height=250)
 
-        # ------------------------------------------------------
-        # 🪶 DOWNLOAD AS TXT
-        # ------------------------------------------------------
-        txt_bytes = extracted_text.encode("utf-8")
-        st.download_button("📄 Download TXT", data=txt_bytes,
-                           file_name="output.txt", mime="text/plain")
+        # ======================
+        # DOWNLOAD WORD DOC
+        # ======================
+        def convert_to_docx(text):
+            doc = Document()
+            doc.add_paragraph(text)
+            buf = BytesIO()
+            doc.save(buf)
+            buf.seek(0)
+            return buf
 
-        # ------------------------------------------------------
-        # 🪶 DOWNLOAD AS DOCX
-        # ------------------------------------------------------
-        doc = Document()
-        doc.add_paragraph(extracted_text)
-        docx_buf = BytesIO()
-        doc.save(docx_buf)
-        docx_buf.seek(0)
-        st.download_button("📘 Download DOCX", data=docx_buf,
-                           file_name="output.docx",
-                           mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        # ======================
+        # DOWNLOAD PDF
+        # ======================
+        def convert_to_pdf(text):
+            buf = BytesIO()
+            c = canvas.Canvas(buf, pagesize=A4)
+            width, height = A4
+            text_obj = c.beginText(50, height - 50)
+            text_obj.setFont("NotoHindi", 14)
+            for line in text.split("\n"):
+                text_obj.textLine(line)
+            c.drawText(text_obj)
+            c.save()
+            buf.seek(0)
+            return buf
 
-        # ------------------------------------------------------
-        # 🪶 DOWNLOAD AS PDF (with Hindi font)
-        # ------------------------------------------------------
-        pdf_buf = BytesIO()
-        c = canvas.Canvas(pdf_buf, pagesize=A4)
-        width, height = A4
-        y = height - 70
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                "📘 Download as Word (.docx)",
+                data=convert_to_docx(extracted_text),
+                file_name="Hindi_OCR_Output.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        with col2:
+            st.download_button(
+                "📄 Download as PDF",
+                data=convert_to_pdf(extracted_text),
+                file_name="Hindi_OCR_Output.pdf",
+                mime="application/pdf"
+            )
 
-        if os.path.exists(FONT_PATH):
-            c.setFont("NotoHindi", 14)
-        else:
-            c.setFont("Helvetica", 14)
-
-        for line in extracted_text.split("\n"):
-            if y < 50:
-                c.showPage()
-                if os.path.exists(FONT_PATH):
-                    c.setFont("NotoHindi", 14)
-                else:
-                    c.setFont("Helvetica", 14)
-                y = height - 70
-            c.drawString(50, y, line)
-            y -= 25
-
-        c.save()
-        pdf_buf.seek(0)
-        st.download_button("🧾 Download PDF", data=pdf_buf,
-                           file_name="output.pdf", mime="application/pdf")
-
-else:
-    st.info("📤 Upload an image to start Hindi OCR.")
+# ======================
+# FOOTER
+# ======================
+st.markdown("---")
+st.markdown("🔠 Developed by **Tanishq Farkya** — Hindi OCR powered by PaddleOCR")
